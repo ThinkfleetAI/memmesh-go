@@ -37,6 +37,16 @@ type SearchResult struct {
 	Importance float64        `json:"importance"`
 }
 
+// IngestMediaResult is the outcome of ingesting one media item: the memories
+// extracted from it plus the text the model read and where the bytes were kept.
+type IngestMediaResult struct {
+	Saved          []MemoryItem `json:"saved"`
+	CandidateCount int          `json:"candidateCount"`
+	ExtractedText  string       `json:"extractedText"`
+	Modality       string       `json:"modality"`
+	BlobURI        string       `json:"blobUri"`
+}
+
 // Insight is a synthesized higher-order memory with provenance.
 type Insight struct {
 	ID         string   `json:"id"`

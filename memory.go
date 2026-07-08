@@ -2,6 +2,7 @@ package memmesh
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -59,6 +60,46 @@ func (o Observe) body() map[string]any {
 func (s *MemoryService) Observe(ctx context.Context, o Observe) (*MemoryItem, error) {
 	var out MemoryItem
 	err := s.c.do(ctx, "POST", "/admin/memory", nil, o.body(), &out)
+	return &out, err
+}
+
+// IngestMedia ingests an image / audio / document. The engine extracts text
+// (vision, transcription, or OCR via LiteLLM) and runs it through the observe
+// pipeline, so the result is real memories, not just a stored file. Requires
+// multimodal to be enabled on the engine.
+type IngestMedia struct {
+	Media     []byte `json:"-"`
+	MimeType  string `json:"-"`
+	UserID    string `json:"-"`
+	AgentID   string `json:"-"`
+	SessionID string `json:"-"`
+	Source    string `json:"-"`
+}
+
+func (m IngestMedia) body() map[string]any {
+	b := map[string]any{
+		"dataBase64": base64.StdEncoding.EncodeToString(m.Media),
+		"mimeType":   m.MimeType,
+	}
+	if m.UserID != "" {
+		b["userId"] = m.UserID
+	}
+	if m.AgentID != "" {
+		b["agentId"] = m.AgentID
+	}
+	if m.SessionID != "" {
+		b["sessionId"] = m.SessionID
+	}
+	if m.Source != "" {
+		b["source"] = m.Source
+	}
+	return b
+}
+
+// IngestMedia sends media to the engine and returns the extracted memories.
+func (s *MemoryService) IngestMedia(ctx context.Context, in IngestMedia) (*IngestMediaResult, error) {
+	var out IngestMediaResult
+	err := s.c.do(ctx, "POST", "/memory/media", nil, in.body(), &out)
 	return &out, err
 }
 
