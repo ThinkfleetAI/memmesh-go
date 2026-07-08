@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const defaultBaseURL = "https://memory.thinkfleet.ai"
+const defaultBaseURL = "https://app.memmesh.ai"
 
 // Client is the entry point. Construct with New. Safe for concurrent use.
 type Client struct {
@@ -44,7 +44,7 @@ type Client struct {
 // Option configures the Client.
 type Option func(*Client)
 
-// WithBaseURL overrides the API base (default https://memory.thinkfleet.ai).
+// WithBaseURL overrides the API base (default https://app.memmesh.ai).
 func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = strings.TrimRight(u, "/") } }
 
 // WithHTTPClient supplies a custom *http.Client (timeouts, proxies, retries).
