@@ -1,0 +1,6 @@
+*.test
+*.out
+/dist/
+.env
+.env.*
+.DS_Store
