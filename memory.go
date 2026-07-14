@@ -50,6 +50,14 @@ func (o Observe) body() map[string]any {
 		imp = 5
 	}
 	b := map[string]any{"content": o.Content, "type": typ, "scope": scope, "importance": imp, "source": "admin_created", "metadata": md}
+	if o.OccurredAt != "" {
+		// Event time, not ingest time. validFrom is the field behavior mining
+		// buckets day-of-week / hour-of-day on, so this is what makes a backfill
+		// work: without it every historical row lands at the moment of import and
+		// the mined patterns describe the import job rather than the data. The
+		// metadata copy above is kept only for readers that already look for it.
+		b["validFrom"] = o.OccurredAt
+	}
 	if o.Category != "" {
 		b["category"] = o.Category
 	}
@@ -123,16 +131,20 @@ func (s *MemoryService) Create(ctx context.Context, in Create) (*MemoryItem, err
 // SearchOpts narrows a semantic search.
 type SearchOpts struct {
 	Limit  int
+	Offset int
 	Scope  string
 	Status string
 }
 
 // Search runs hybrid semantic + keyword search across everything the project
-// can see.
+// can see. Page by bumping Offset.
 func (s *MemoryService) Search(ctx context.Context, query string, opts SearchOpts) ([]SearchResult, error) {
 	body := map[string]any{"query": query}
 	if opts.Limit > 0 {
 		body["limit"] = opts.Limit
+	}
+	if opts.Offset > 0 {
+		body["offset"] = opts.Offset
 	}
 	if opts.Scope != "" {
 		body["scope"] = opts.Scope
@@ -174,6 +186,19 @@ func (s *MemoryService) List(ctx context.Context, opts ListOpts) ([]MemoryItem, 
 	var out []MemoryItem
 	err := s.c.do(ctx, "GET", "/admin/memory", q, nil, &out)
 	return out, err
+}
+
+// Get fetches a single memory by id.
+//
+// The point-lookup counterpart to List/Search: without it, a caller holding a
+// memory id (from a pattern's sourceMemoryIds, an audit log, a webhook) had no
+// way to resolve it and had to page List hoping the row was still on one.
+func (s *MemoryService) Get(ctx context.Context, id string) (*MemoryItem, error) {
+	var out MemoryItem
+	if err := s.c.do(ctx, "GET", "/admin/memory/"+id, nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // Update patches a memory (nil/empty fields are omitted).
