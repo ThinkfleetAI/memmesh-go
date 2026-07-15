@@ -23,7 +23,11 @@ type Observe struct {
 	Category     string         `json:"-"`
 	ActivityType string         `json:"-"`
 	OccurredAt   string         `json:"-"`
-	Metadata     map[string]any `json:"-"`
+	// Metadata carries structured fields the mining engine reads off the event.
+	// The RFM Monetary score sums a numeric "amount" (or "value"/"total", or a
+	// "lineItems" array) — a price written only into Content is not parsed, so
+	// set it here: Metadata: map[string]any{"amount": 42.0}.
+	Metadata map[string]any `json:"-"`
 }
 
 func (o Observe) body() map[string]any {
