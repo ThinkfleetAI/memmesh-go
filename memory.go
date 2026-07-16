@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // MemoryService is the primary surface: ingest, recall, and the admin +
@@ -330,4 +331,95 @@ func (s *MemoryService) PrefetchRelated(ctx context.Context, seedMemoryIDs []str
 	var out []MemoryItem
 	err := s.c.do(ctx, "POST", "/admin/memory/prefetch-related", nil, body, &out)
 	return out, err
+}
+
+// RenderProcedureContent renders a procedure into the injectable content
+// string — identical to the engine-side renderer, so client-authored content
+// matches what the server would produce.
+func RenderProcedureContent(in ProcedureInput) string {
+	lines := []string{fmt.Sprintf("Goal: %s", strings.TrimSpace(in.Goal))}
+	if strings.TrimSpace(in.WhenToUse) != "" {
+		lines = append(lines, fmt.Sprintf("When: %s", strings.TrimSpace(in.WhenToUse)))
+	}
+	lines = append(lines, "Steps:")
+	for i, s := range in.Steps {
+		suffix := ""
+		if strings.TrimSpace(s.Pitfall) != "" {
+			suffix = fmt.Sprintf(" (watch out: %s)", strings.TrimSpace(s.Pitfall))
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s%s", i+1, strings.TrimSpace(s.Text), suffix))
+	}
+	var failures []string
+	for _, f := range in.FailureModes {
+		if strings.TrimSpace(f) != "" {
+			failures = append(failures, strings.TrimSpace(f))
+		}
+	}
+	if len(failures) > 0 {
+		lines = append(lines, "Avoid:")
+		for _, f := range failures {
+			lines = append(lines, "- "+f)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// CreateProcedure authors a procedure ("how this job is done here"). Stored as
+// a `procedure` memory: the structured shape on metadata and the rendered
+// how-to on content, so retrieval injects it as an explicit exemplar.
+func (s *MemoryService) CreateProcedure(ctx context.Context, in ProcedureInput) (*MemoryItem, error) {
+	scope := in.Scope
+	if scope == "" {
+		scope = "project"
+	}
+	importance := in.Importance
+	if importance == 0 {
+		importance = 7
+	}
+	metadata := map[string]any{"goal": in.Goal, "steps": in.Steps}
+	if in.WhenToUse != "" {
+		metadata["whenToUse"] = in.WhenToUse
+	}
+	if len(in.FailureModes) > 0 {
+		metadata["failureModes"] = in.FailureModes
+	}
+	return s.Create(ctx, Create{
+		Content:    RenderProcedureContent(in),
+		Type:       TypeProcedure,
+		Scope:      scope,
+		Importance: importance,
+		Category:   in.Category,
+		Metadata:   metadata,
+	})
+}
+
+// ListPendingReview returns the adjudication queue — everything the system is
+// unsure about. Each row carries a ReviewReason (pending / flagged /
+// low_confidence / stale).
+func (s *MemoryService) ListPendingReview(ctx context.Context, limit, offset int) ([]ReviewQueueItem, error) {
+	q := url.Values{}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		q.Set("offset", strconv.Itoa(offset))
+	}
+	var out []ReviewQueueItem
+	err := s.c.do(ctx, "GET", "/admin/memory/review", q, nil, &out)
+	return out, err
+}
+
+// GetPrecedence returns the project's memory precedence policy — which memory
+// wins when two disagree. Falls back to the default ladder when unset.
+func (s *MemoryService) GetPrecedence(ctx context.Context) (*PrecedencePolicy, error) {
+	var out PrecedencePolicy
+	err := s.c.do(ctx, "GET", "/admin/memory/precedence", nil, nil, &out)
+	return &out, err
+}
+
+// SetPrecedence saves the precedence policy. Requires the Memory Steward role.
+func (s *MemoryService) SetPrecedence(ctx context.Context, policy PrecedencePolicy) (*PrecedencePolicy, error) {
+	var out PrecedencePolicy
+	err := s.c.do(ctx, "PUT", "/admin/memory/precedence", nil, policy, &out)
+	return &out, err
 }

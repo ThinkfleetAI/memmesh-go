@@ -55,6 +55,65 @@ type Insight struct {
 	Confidence float64  `json:"confidence"`
 }
 
+// Memory item types. `type` is a free-form string on the wire; these are the
+// well-known values.
+const (
+	TypeProcedure = "procedure"
+)
+
+// Provenance tiers for the precedence policy, strongest→weakest by default.
+const (
+	TierHumanVerified = "human_verified"
+	TierLocal         = "local"
+	TierLicensedBrain = "licensed_brain"
+	TierBase          = "base"
+)
+
+// Review-queue reasons (highest priority first).
+const (
+	ReviewPending       = "pending"
+	ReviewFlagged       = "flagged"
+	ReviewLowConfidence = "low_confidence"
+	ReviewStale         = "stale"
+)
+
+// ReviewQueueItem is a memory in the adjudication queue plus why it's there.
+type ReviewQueueItem struct {
+	MemoryItem
+	ReviewReason string `json:"reviewReason"`
+}
+
+// ProcedureStep is one step of a procedure. Pitfall is an optional warning.
+type ProcedureStep struct {
+	Text    string `json:"text"`
+	Pitfall string `json:"pitfall,omitempty"`
+}
+
+// ProcedureInput authors a procedure — "how this job is done here."
+type ProcedureInput struct {
+	Goal         string          `json:"goal"`
+	WhenToUse    string          `json:"whenToUse,omitempty"`
+	Steps        []ProcedureStep `json:"steps"`
+	FailureModes []string        `json:"failureModes,omitempty"`
+	// Category is the heading used when the procedure is injected.
+	Category   string `json:"-"`
+	Scope      string `json:"-"`
+	Importance int    `json:"-"`
+}
+
+// PrecedenceOverride is a category-level exception: for this category, this tier wins.
+type PrecedenceOverride struct {
+	Category    string `json:"category"`
+	WinningTier string `json:"winningTier"`
+}
+
+// PrecedencePolicy decides which memory wins when two disagree.
+type PrecedencePolicy struct {
+	DefaultOrder     []string             `json:"defaultOrder"`
+	ScopeNearestWins bool                 `json:"scopeNearestWins"`
+	Overrides        []PrecedenceOverride `json:"overrides"`
+}
+
 // GraphEdge is one edge of the temporal knowledge graph.
 type GraphEdge struct {
 	ID            string  `json:"id"`
