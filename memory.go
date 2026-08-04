@@ -16,14 +16,23 @@ type MemoryService struct{ c *Client }
 // Observe records that something happened. The engine mines, wires the graph,
 // and revises beliefs server-side.
 type Observe struct {
-	Subject      Subject        `json:"-"`
-	Content      string         `json:"-"`
-	Type         string         `json:"-"` // default "event"
-	Scope        string         `json:"-"` // default "project"
-	Importance   int            `json:"-"` // default 5
-	Category     string         `json:"-"`
-	ActivityType string         `json:"-"`
-	OccurredAt   string         `json:"-"`
+	// Text is the raw message turn — the PRIMARY field. Send it verbatim; the
+	// engine runs extraction (heuristic + optional LLM) through the observe
+	// pipeline and keeps only what's worth remembering, dropping filler. Prefer
+	// this over Content, which stores a pre-decided fact verbatim (no filter).
+	Text string `json:"-"`
+	// Role is who said Text — defaults to "user". Only used with the Text path.
+	Role    string  `json:"-"`
+	Subject Subject `json:"-"`
+	// Content is the legacy pre-decided fact stored verbatim, bypassing the
+	// noise filter. Prefer Text and let the engine decide what to keep.
+	Content      string `json:"-"`
+	Type         string `json:"-"` // default "event"
+	Scope        string `json:"-"` // default "project"
+	Importance   int    `json:"-"` // default 5
+	Category     string `json:"-"`
+	ActivityType string `json:"-"`
+	OccurredAt   string `json:"-"`
 	// Metadata carries structured fields the mining engine reads off the event.
 	// The RFM Monetary score sums a numeric "amount" (or "value"/"total", or a
 	// "lineItems" array) — a price written only into Content is not parsed, so
@@ -61,11 +70,45 @@ func (o Observe) body() map[string]any {
 	return b
 }
 
-// Observe ingests an event-shaped memory (the primary agent ingestion call).
-func (s *MemoryService) Observe(ctx context.Context, o Observe) (*MemoryItem, error) {
-	var out MemoryItem
-	err := s.c.do(ctx, "POST", "/admin/memory", nil, o.body(), &out)
-	return &out, err
+// ObserveResponse is what Observe returns: the memories the engine chose to
+// keep (empty when the turn was filler — that's success, not an error) plus how
+// many candidates it found before the dedupe/budget pass. len(Saved) <= CandidateCount.
+type ObserveResponse struct {
+	Saved          []MemoryItem `json:"saved"`
+	CandidateCount int          `json:"candidateCount"`
+}
+
+// Observe ingests a raw turn (the primary agent ingestion call). When Text is
+// set it POSTs to the project observe endpoint, which runs the engine's noise
+// filter (extract → dedupe → budget) and returns only what's worth keeping;
+// filler comes back with Saved empty. When Text is empty but Content is set it
+// falls back to the legacy verbatim path (admin-create, no filter) and wraps the
+// single stored item. One of Text or Content is required.
+func (s *MemoryService) Observe(ctx context.Context, o Observe) (*ObserveResponse, error) {
+	// PRIMARY path: hand the engine the raw turn and let it decide what to keep.
+	if strings.TrimSpace(o.Text) != "" {
+		role := o.Role
+		if role == "" {
+			role = "user"
+		}
+		body := map[string]any{"text": o.Text, "role": role}
+		if o.OccurredAt != "" {
+			body["occurredAt"] = o.OccurredAt
+		}
+		var out ObserveResponse
+		err := s.c.do(ctx, "POST", "/memory/observe", nil, body, &out)
+		return &out, err
+	}
+	// LEGACY path: caller handed a pre-decided fact. Store it verbatim (no
+	// extraction) and wrap the single item so the return shape stays consistent.
+	if strings.TrimSpace(o.Content) != "" {
+		var item MemoryItem
+		if err := s.c.do(ctx, "POST", "/admin/memory", nil, o.body(), &item); err != nil {
+			return nil, err
+		}
+		return &ObserveResponse{Saved: []MemoryItem{item}, CandidateCount: 1}, nil
+	}
+	return nil, fmt.Errorf("observe requires Text (preferred) or Content")
 }
 
 // IngestMedia ingests an image / audio / document. The engine extracts text
