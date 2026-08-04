@@ -3,8 +3,7 @@
 //
 //	mm := memmesh.New("sk-...", "proj_...")
 //	mm.Memory.Observe(ctx, memmesh.Observe{
-//	    Subject: memmesh.Subject{Kind: "contact", ExternalID: "sarah"},
-//	    Content: "Prefers email over phone.",
+//	    Text: "Sarah told me she prefers email over phone.",
 //	})
 //	hits, _ := mm.Memory.Search(ctx, "how to reach sarah", memmesh.SearchOpts{Limit: 5})
 package memmesh

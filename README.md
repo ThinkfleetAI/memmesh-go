@@ -24,11 +24,12 @@ func main() {
 	ctx := context.Background()
 	mm := memmesh.New("sk-...", "proj_...") // apiKey, projectId
 
-	// Remember something
-	mm.Memory.Observe(ctx, memmesh.Observe{
-		Subject: memmesh.Subject{Kind: "contact", ExternalID: "sarah"},
-		Content: "Prefers email over phone.",
+	// Remember something — hand the engine the raw turn; it runs the noise
+	// filter and keeps only what's worth remembering (res.Saved).
+	res, _ := mm.Memory.Observe(ctx, memmesh.Observe{
+		Text: "Sarah told me she prefers email over phone.",
 	})
+	fmt.Printf("kept %d of %d candidates\n", len(res.Saved), res.CandidateCount)
 
 	// Recall it, semantically
 	hits, _ := mm.Memory.Search(ctx, "how to reach sarah", memmesh.SearchOpts{Limit: 5})
