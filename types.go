@@ -125,3 +125,12 @@ type GraphEdge struct {
 	ValidFrom     string  `json:"validFrom"`
 	ValidTo       *string `json:"validTo"`
 }
+
+// ObserveResponse is what Observe returns: the memories the engine chose to
+// keep (empty when the turn was filler — still a success) plus how many
+// candidates extraction found before the dedupe/budget pass.
+// len(Saved) <= CandidateCount.
+type ObserveResponse struct {
+	Saved          []MemoryItem `json:"saved"`
+	CandidateCount int          `json:"candidateCount"`
+}

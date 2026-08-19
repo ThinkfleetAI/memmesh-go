@@ -16,14 +16,36 @@ type MemoryService struct{ c *Client }
 // Observe records that something happened. The engine mines, wires the graph,
 // and revises beliefs server-side.
 type Observe struct {
-	Subject      Subject        `json:"-"`
-	Content      string         `json:"-"`
-	Type         string         `json:"-"` // default "event"
-	Scope        string         `json:"-"` // default "project"
-	Importance   int            `json:"-"` // default 5
-	Category     string         `json:"-"`
-	ActivityType string         `json:"-"`
-	OccurredAt   string         `json:"-"`
+	// Text is the raw message turn — the PRIMARY field. Send the whole turn
+	// verbatim; the engine runs extraction and keeps only what is worth
+	// remembering, dropping filler. When set, Observe posts to /memory/observe
+	// and the structured fields below are ignored — the engine resolves them
+	// during extraction.
+	Text string `json:"-"`
+	// Role is who said Text — defaults to "user". Only used on the Text path.
+	Role string `json:"-"`
+	// UserID is the end user this turn belongs to — your own identifier, not a
+	// MemMesh one. Recorded as provenance on whatever the engine keeps.
+	//
+	// NOT a tenancy boundary: search filters chatIdentityId IS NULL OR = $1,
+	// permissively by design, so project-wide memories stay visible to every
+	// caller. Isolating one end user's memories needs a project per tenant.
+	UserID string `json:"-"`
+	// AgentID is the agent or assistant that produced this turn. Provenance only.
+	AgentID string `json:"-"`
+	// SessionID is a conversation/thread id, so turns from one session stay linkable.
+	SessionID string `json:"-"`
+
+	Subject Subject `json:"-"`
+	// Content is DEPRECATED — a pre-decided fact stored verbatim, bypassing
+	// extraction. Prefer Text and let the engine decide what to keep.
+	Content      string `json:"-"`
+	Type         string `json:"-"` // default "event"
+	Scope        string `json:"-"` // default "project"
+	Importance   int    `json:"-"` // default 5
+	Category     string `json:"-"`
+	ActivityType string `json:"-"`
+	OccurredAt   string `json:"-"`
 	// Metadata carries structured fields the mining engine reads off the event.
 	// The RFM Monetary score sums a numeric "amount" (or "value"/"total", or a
 	// "lineItems" array) — a price written only into Content is not parsed, so
@@ -70,10 +92,52 @@ func (o Observe) body() map[string]any {
 }
 
 // Observe ingests an event-shaped memory (the primary agent ingestion call).
-func (s *MemoryService) Observe(ctx context.Context, o Observe) (*MemoryItem, error) {
-	var out MemoryItem
-	err := s.c.do(ctx, "POST", "/admin/memory", nil, o.body(), &out)
-	return &out, err
+// Observe records a turn.
+//
+// PRIMARY path: set Text and the raw turn goes to the engine's Observe pipeline
+// (extract -> dedupe -> graph -> embed), which returns what it chose to keep.
+// Filler comes back with an empty Saved — that is success, not an error.
+// CandidateCount is what extraction proposed before the dedupe/budget pass, so
+// len(Saved) <= CandidateCount.
+//
+// LEGACY path: set Content instead and the pre-decided fact is stored verbatim,
+// bypassing extraction. Wrapped in the same response shape so callers do not
+// branch on which path ran.
+func (s *MemoryService) Observe(ctx context.Context, o Observe) (*ObserveResponse, error) {
+	if strings.TrimSpace(o.Text) != "" {
+		var out ObserveResponse
+		err := s.c.do(ctx, "POST", "/memory/observe", nil, o.textBody(), &out)
+		return &out, err
+	}
+	var item MemoryItem
+	if err := s.c.do(ctx, "POST", "/admin/memory", nil, o.body(), &item); err != nil {
+		return nil, err
+	}
+	return &ObserveResponse{Saved: []MemoryItem{item}, CandidateCount: 1}, nil
+}
+
+// textBody builds the /memory/observe payload. The identity fields are
+// provenance; they are omitted rather than sent as null so a turn without them
+// is indistinguishable from one made by an older client.
+func (o Observe) textBody() map[string]any {
+	role := o.Role
+	if role == "" {
+		role = "user"
+	}
+	b := map[string]any{"text": o.Text, "role": role}
+	if o.OccurredAt != "" {
+		b["occurredAt"] = o.OccurredAt
+	}
+	if o.UserID != "" {
+		b["userId"] = o.UserID
+	}
+	if o.AgentID != "" {
+		b["agentId"] = o.AgentID
+	}
+	if o.SessionID != "" {
+		b["sessionId"] = o.SessionID
+	}
+	return b
 }
 
 // IngestMedia ingests an image / audio / document. The engine extracts text
