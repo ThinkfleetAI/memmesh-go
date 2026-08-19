@@ -31,6 +31,7 @@ type Client struct {
 	http      *http.Client
 
 	Memory     *MemoryService
+	Graph      *GraphService
 	Lattice    *LatticeService
 	Context    *ContextService
 	Events     *EventsService
@@ -63,6 +64,7 @@ func New(apiKey, projectID string, opts ...Option) *Client {
 		o(c)
 	}
 	c.Memory = &MemoryService{c: c}
+	c.Graph = &GraphService{c: c}
 	c.Lattice = &LatticeService{c: c}
 	c.Context = &ContextService{c: c}
 	c.Events = &EventsService{c: c}
